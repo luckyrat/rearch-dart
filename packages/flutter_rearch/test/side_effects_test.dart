@@ -407,4 +407,63 @@ void main() {
 
     expect(find.text('No assert!'), findsOneWidget);
   });
+
+  testWidgets('detached widgets are not rebuilt by side effects (#304)',
+      (tester) async {
+    ValueWrapper<int> rebuildableCapsule(CapsuleHandle use) => use.data(0);
+    ValueWrapper<bool> displayToggleCapsule(CapsuleHandle use) =>
+        use.data(true);
+
+    final container = useContainer();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CapsuleContainerProvider(
+          container: container,
+          child: RearchBuilder(builder: (context, use) {
+            final displayTestWidget = use(displayToggleCapsule);
+            final builds = ++use.data(0).value;
+
+            return Column(
+              children: [
+                displayTestWidget.value
+                    ? Container(
+                        child: RearchBuilder(
+                          builder: (context, use) {
+                            use(rebuildableCapsule);
+                            final builds = ++use.data(0).value;
+                            return Text('inner $builds');
+                          },
+                        ),
+                      )
+                    : Container(
+                        child: Text('replacement widget $builds'),
+                      ),
+                Container(
+                  child: Text('outer $builds'),
+                )
+              ],
+            );
+          }),
+        ),
+      ),
+    );
+    expect(find.text('outer 1'), findsOneWidget);
+    expect(find.text('inner 1'), findsOneWidget);
+    container.read(displayToggleCapsule).value = false;
+    await tester.pump();
+    expect(find.text('replacement widget 2'), findsOneWidget);
+    expect(find.text('outer 2'), findsOneWidget);
+
+    // Forcing a delay causes the test to run forever
+    // await Future.delayed(Durations.long4);
+
+    container.read(rebuildableCapsule).value = 1;
+    await tester.pump();
+
+    //TODO: Also expect the lack of a specific exception? Or maybe just this
+    // test that the build numbers didn't increment and the test completes is
+    // enough.
+    expect(find.text('replacement widget 2'), findsOneWidget);
+    expect(find.text('outer 2'), findsOneWidget);
+  });
 }
